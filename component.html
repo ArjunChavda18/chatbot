@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Flow Input Tree</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-beta.1/css/select2.min.css" rel="stylesheet" />
+  <style>
+    .flow-node { margin-left: 20px; margin-top: 10px; }
+    .stop-text { margin-left: 10px; }
+    .stop-btn { margin-left: 10px; }
+  </style>
+</head>
+<body>
+  <div id="flow-container"></div>
+  <button id="get-json">Get JSON</button>
+  <pre id="output"></pre>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-beta.1/js/select2.min.js"></script>
+  <script>
+    $(document).ready(function () {
+      function createNode(level = 0, data = null) {
+        const node = $('<div class="flow-node"></div>');
+        const select = $(`<select multiple class="flow-select" style="width:300px"></select>`);
+        const childrenMap = {};
+
+        node.append(select);
+
+        select.select2({
+          tags: true,
+          placeholder: 'Enter options...',
+        });
+
+        if (data && Array.isArray(data)) {
+          data.forEach(item => {
+            if (item.name) {
+              const option = new Option(item.name, item.name, true, true);
+              select.append(option).trigger('change');
+            }
+          });
+        }
+
+        select.on('select2:select', function (e) {
+          const val = e.params.data.id;
+          if (!childrenMap[val]) {
+            const childContainer = $('<div class="child-container"></div>');
+
+            // Add Stop button
+            const stopBtn = $('<button class="stop-btn">Stop</button>');
+            const stopInput = $('<input type="text" class="stop-text" placeholder="Enter stop message..." style="display:none;">');
+
+            stopBtn.on('click', function () {
+              childContainer.find('.flow-node').hide();
+              stopInput.show();
+              stopBtn.hide();
+            });
+
+            childContainer.append(stopBtn).append(stopInput);
+
+            const childNode = createNode(level + 1);
+            childContainer.append(childNode.container);
+            node.append(`<div><b>${val}</b></div>`, childContainer);
+            childrenMap[val] = { container: childContainer, childNode, stopInput };
+          }
+        });
+
+        select.on('select2:unselect', function (e) {
+          const val = e.params.data.id;
+          if (childrenMap[val]) {
+            childrenMap[val].container.remove();
+            delete childrenMap[val];
+          }
+        });
+
+        node.append(select);
+
+        return {
+          container: node,
+          getData: function () {
+            const selected = select.val() || [];
+            return selected.map(val => {
+              const child = childrenMap[val];
+              if (child.stopInput.is(':visible')) {
+                return {
+                  name: val,
+                  children: [{ stop: true, stop_message: child.stopInput.val() }]
+                };
+              } else {
+                return {
+                  name: val,
+                  children: child.childNode.getData()
+                };
+              }
+            });
+          },
+          setData: function (dataArray) {
+            dataArray.forEach(item => {
+              // Add option if not present
+              if (select.find('option[value="' + item.name + '"]').length === 0) {
+                const option = new Option(item.name, item.name, true, true);
+                select.append(option);
+              }
+              // Set value and trigger select2:select to build UI
+              select.val((select.val() || []).concat(item.name)).trigger('change');
+              select.trigger({
+                type: 'select2:select',
+                params: { data: { id: item.name } }
+              });
+
+              if (item.children && item.children.length > 0) {
+                const isStopped = item.children[0].stop;
+                const child = childrenMap[item.name];
+                if (isStopped) {
+                  child.stopInput.val(item.children[0].stop_message).show();
+                  child.container.find('.flow-node').hide();
+                  child.container.find('.stop-btn').hide();
+                } else {
+                  child.childNode.setData(item.children);
+                }
+              }
+            });
+          }
+        };
+      }
+
+      // Initialize root node
+      const rootNode = createNode();
+      $('#flow-container').append(rootNode.container);
+
+      // Get JSON Button
+      $('#get-json').on('click', function () {
+        const json = rootNode.getData();
+        $('#output').text(JSON.stringify(json, null, 2));
+      });
+
+      // Example: To load data into the tree
+      const sampleJson = [
+        {
+          name: "gents",
+          children: [{ name: "pants", children: [] }]
+        },
+        {
+          name: "ladies",
+          children: [
+            {
+              name: "kurti",
+              children: []
+            },
+            {
+              name: "choli",
+              children: [{ stop: true, stop_message: "no more options" }]
+            }
+          ]
+        }
+      ];
+      rootNode.setData([]);
+    });
+  </script>
+</body>
+</html>
